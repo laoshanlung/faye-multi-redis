@@ -1,18 +1,11 @@
 var RedisEngine = require('..')
 var RedisSpawn = require('redis-spawn')
 
-var cluster  = [
-  {
-    host: "127.0.0.1",
-    port: 6500,
-    password: "vagrant"
-  },
-  {
-    host: "127.0.0.1",
-    port: 6501,
-    password: "vagrant"
-  }
-]
+try {
+  var cluster  = require('./servers.json')  
+} catch (e) {
+  throw "Must specify servers in servers.json file"
+}
 
 var _cluster = new RedisSpawn(cluster);
 

@@ -1,0 +1,12 @@
+[
+  {
+    "host": "127.0.0.1",
+    "port": 6500,
+    "password": "vagrant"
+  },
+  {
+    "host": "127.0.0.1",
+    "port": 6501,
+    "password": "vagrant"
+  }
+]
