@@ -1,5 +1,5 @@
 {
-  "name": "faye-multi-redis-node",
+  "name": "faye-multi-redis",
   "version": "0.0.2",
   "description": "Faye Engine using multiple redis servers",
   "main": "index.js",

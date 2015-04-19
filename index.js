@@ -20,15 +20,17 @@ var Engine = function(server, options) {
   this._messageChannel = this._ns + '/notifications/messages';
   this._closeChannel   = this._ns + '/notifications/close';
 
+  var self = this;
+
   this._subscriberCluster.each(function(instance){
-    instance.subscribe(this._messageChannel);
-    instance.subscribe(this._closeChannel);
+    instance.subscribe(self._messageChannel);
+    instance.subscribe(self._closeChannel);
 
     instance.on('message', function(topic, message){
-      if (topic === this._messageChannel) this.emptyQueue(message);
-      if (topic === this._closeChannel)   this._server.trigger('close', message);
-    }.bind(this));
-  }.bind(this));
+      if (topic === self._messageChannel) self.emptyQueue(message);
+      if (topic === self._closeChannel)   self._server.trigger('close', message);
+    });
+  });
 
   this._gc = setInterval(function() { this.gc() }.bind(this), gc * 1000);
 };
@@ -77,57 +79,60 @@ Engine.prototype = {
   createClient: function(callback, context) {
     var clientId = this._server.generateId()
       , instance = this._normalCluster.get('clients')
+      , self = this
 
     instance.zadd(this._clientsKey(), 0, clientId, function(error, added){
-      if (added === 0) return this.createClient(callback, context);
+      if (added === 0) return self.createClient(callback, context);
 
-      this._server.debug('Created new client ?', clientId);
-      this.ping(clientId);
-      this._server.trigger('handshake', clientId);
+      self._server.debug('Created new client ?', clientId);
+      self.ping(clientId);
+      self._server.trigger('handshake', clientId);
       callback.call(context, clientId);
-    }.bind(this));
+    });
   },
 
   clientExists: function(clientId, callback, context) {
     var cutoff = new Date().getTime() - (1000 * 1.6 * this._server.timeout)
       , instance = this._normalCluster.get('clients')
+      , self = this
 
     instance.zscore(this._clientsKey(), clientId, function(error, score){
       callback.call(context, parseInt(score, 10) > cutoff);
-    }.bind(this));
+    });
   },
 
   destroyClient: function(clientId, callback, context) {
     var _client = this._normalCluster.get(clientId, true)
       , _clients = this._normalCluster.get('clients', true)
       , tasks = []
+      , self = this
 
     _client.smembers(this._clientChannelsKey(clientId)).then(function(channels){
-      tasks.push(_clients.zadd(this._clientsKey(), 0, clientId));
+      tasks.push(_clients.zadd(self._clientsKey(), 0, clientId));
 
       channels.forEach(function(channel) {
-        tasks.push(_client.srem(this._clientChannelsKey(clientId), channel));
+        tasks.push(_client.srem(self._clientChannelsKey(clientId), channel));
 
-        var _channel = this._normalCluster.get(channel, true)
-        tasks.push(_channel.srem(this._channelKey(channel), clientId));
-      }.bind(this));
+        var _channel = self._normalCluster.get(channel, true)
+        tasks.push(_channel.srem(self._channelKey(channel), clientId));
+      });
 
-      tasks.push(_client.del(this._clientMessagesKey(clientId)));
-      tasks.push(_clients.zrem(this._clientsKey(), clientId));
-      tasks.push(_client.publish(this._closeChannel, clientId));
+      tasks.push(_client.del(self._clientMessagesKey(clientId)));
+      tasks.push(_clients.zrem(self._clientsKey(), clientId));
+      tasks.push(_client.publish(self._closeChannel, clientId));
 
       return when.all(tasks).then(function(results){
         channels.forEach(function(channel, i) {
           if (results[2 * i + 1] !== 1) return;
-          this._server.trigger('unsubscribe', clientId, channel);
-          this._server.debug('Unsubscribed client ? from channel ?', clientId, channel);
-        }.bind(this));
+          self._server.trigger('unsubscribe', clientId, channel);
+          self._server.debug('Unsubscribed client ? from channel ?', clientId, channel);
+        });
 
-        this._server.debug('Destroyed client ?', clientId);
-        this._server.trigger('disconnect', clientId);
-      }.bind(this));
+        self._server.debug('Destroyed client ?', clientId);
+        self._server.trigger('disconnect', clientId);
+      });
 
-    }.bind(this)).catch(function(){
+    }).catch(function(){
 
     }).finally(function(){
       if (callback) callback.call(context);
@@ -149,51 +154,54 @@ Engine.prototype = {
   subscribe: function(clientId, channel, callback, context) {
     var _client = this._normalCluster.get(clientId)
       , _channel = this._normalCluster.get(channel)
+      , self = this
 
     _client.sadd(this._clientChannelsKey(clientId), channel, function(error, added){
-      if (added === 1) this._server.trigger('subscribe', clientId, channel);
-    }.bind(this));
+      if (added === 1) self._server.trigger('subscribe', clientId, channel);
+    });
 
     _channel.sadd(this._channelKey(channel), clientId, function(){
-      this._server.debug('Subscribed client ? to channel ?', clientId, channel);
+      self._server.debug('Subscribed client ? to channel ?', clientId, channel);
       if (callback) callback.call(context);
-    }.bind(this));
+    });
   },
 
   unsubscribe: function(clientId, channel, callback, context) {
     var _client = this._normalCluster.get(clientId)
       , _channel = this._normalCluster.get(channel)
+      , self = this
 
     _client.srem(this._clientChannelsKey(clientId), channel, function(error, removed){
-      if (removed === 1) this._server.trigger('unsubscribe', clientId, channel);
-    }.bind(this));
+      if (removed === 1) self._server.trigger('unsubscribe', clientId, channel);
+    });
 
     _channel.srem(this._channelKey(channel), clientId, function(){
-      this._server.debug('Unsubscribed client ? from channel ?', clientId, channel);
+      self._server.debug('Unsubscribed client ? from channel ?', clientId, channel);
       if (callback) callback.call(context);
-    }.bind(this));
+    });
   },
 
   publish: function(message, channels) {
     this._server.debug('Publishing message ?', message);
 
     var jsonMessage = JSON.stringify(message),
-        keys        = channels.map(function(c) { return this._channelKey(c) }.bind(this));
+        keys        = channels.map(function(c) { return this._channelKey(c) }.bind(this))
+        self = this
 
     var notify = function(clients) {
       clients.forEach(function(clientId) {
-        var queue = this._clientMessagesKey(clientId)
-          , instance = this._normalCluster.get(clientId)
+        var queue = self._clientMessagesKey(clientId)
+          , instance = self._normalCluster.get(clientId)
 
-        this._server.debug('Queueing for client ?: ?', clientId, message);
+        self._server.debug('Queueing for client ?: ?', clientId, message);
         instance.rpush(queue, jsonMessage);
-        instance.publish(this._messageChannel, clientId);
+        instance.publish(self._messageChannel, clientId);
 
-        this.clientExists(clientId, function(exists) {
+        self.clientExists(clientId, function(exists) {
           if (!exists) instance.del(queue);
         });
-      }.bind(this));
-    }.bind(this);
+      });
+    };
 
     var tasks = []
       , instances = {};
@@ -229,12 +237,13 @@ Engine.prototype = {
     var key = this._clientMessagesKey(clientId)
       , instance = this._normalCluster.get(clientId)
       , multi = instance.multi()
+      , self = this
 
     multi.lrange(key, 0, -1, function(error, jsonMessages) {
       if (!jsonMessages) return;
       var messages = jsonMessages.map(function(json) { return JSON.parse(json) });
-      this._server.deliver(clientId, messages);
-    }.bind(this));
+      self._server.deliver(clientId, messages);
+    });
 
     multi.del(key);
     multi.exec();

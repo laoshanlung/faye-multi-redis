@@ -9,7 +9,7 @@ try {
 
 var _cluster = new RedisSpawn(cluster);
 
-JS.Test.describe("Redis engine", function() { with(this) {
+JS.Test.describe("Multi-Redis engine", function() { with(this) {
   before(function() {
     var pw = process.env.TRAVIS ? undefined : "foobared"
     this.engineOpts = {type: RedisEngine, cluster: cluster, namespace: new Date().getTime().toString()}
